@@ -1336,21 +1336,11 @@ void Server::handle_model_by_id(const httplib::Request& req, httplib::Response& 
 }
 
 void Server::handle_chat_completions(const httplib::Request& req, httplib::Response& res) {
-    ActiveRequestTracker tracker(metrics_registry_.get());
     try {
         auto request_json = nlohmann::json::parse(req.body);
+        std::string requested_model = request_json.contains("model") ? request_json["model"].get<std::string>() : "";
+        ActiveRequestTracker tracker(metrics_registry_.get(), requested_model);
 
-        // Debug: Check if tools are present
-        if (request_json.contains("tools")) {
-            LOG(DEBUG, "Server") << "Tools present in request: " << request_json["tools"].size() << " tool(s)" << std::endl;
-            LOG(DEBUG, "Server") << "Tools JSON: " << request_json["tools"].dump() << std::endl;
-        } else {
-            LOG(DEBUG, "Server") << "No tools in request" << std::endl;
-        }
-
-        // Handle model loading/switching
-        if (request_json.contains("model")) {
-            std::string requested_model = request_json["model"];
             try {
                 auto_load_model_if_needed(requested_model);
             } catch (const std::exception& e) {
@@ -1415,7 +1405,7 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                 // Use cpp-httplib's chunked content provider for SSE streaming
                 res.set_chunked_content_provider(
                     "text/event-stream",
-                    [this, request_body](size_t offset, httplib::DataSink& sink) {
+                    [this, request_body, tracker = std::move(tracker)](size_t offset, httplib::DataSink& sink) {
                         // For chunked responses, offset tracks bytes sent so far
                         // We only want to stream once when offset is 0
                         if (offset > 0) {
@@ -1494,7 +1484,7 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                     if (response.contains("usage") && response["usage"].contains("prompt_tokens")) {
                         prompt_tokens = response["usage"]["prompt_tokens"].get<int>();
                     }
-                    metrics_registry_->record_inference(input_tokens, output_tokens, prompt_tokens, ttft_seconds, tps);
+                    metrics_registry_->record_inference(requested_model, input_tokens, output_tokens, prompt_tokens, ttft_seconds, tps);
                 }
             } else if (response.contains("usage")) {
                 // OpenAI format uses "usage" field
@@ -1534,7 +1524,7 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                     if (response.contains("usage") && response["usage"].contains("prompt_tokens")) {
                         prompt_tokens = response["usage"]["prompt_tokens"].get<int>();
                     }
-                    metrics_registry_->record_inference(input_tokens, output_tokens, prompt_tokens, ttft_seconds, tps);
+                    metrics_registry_->record_inference(requested_model, input_tokens, output_tokens, prompt_tokens, ttft_seconds, tps);
                 }
             }
 
@@ -1557,13 +1547,14 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
 }
 
 void Server::handle_completions(const httplib::Request& req, httplib::Response& res) {
-    ActiveRequestTracker tracker(metrics_registry_.get());
     try {
         auto request_json = nlohmann::json::parse(req.body);
+        std::string requested_model = request_json.contains("model") ? request_json["model"].get<std::string>() : "";
+        ActiveRequestTracker tracker(metrics_registry_.get(), requested_model);
 
         // Handle model loading/switching (same logic as chat_completions)
         if (request_json.contains("model")) {
-            std::string requested_model = request_json["model"];
+            requested_model = request_json["model"];
             try {
                 auto_load_model_if_needed(requested_model);
             } catch (const std::exception& e) {
@@ -1613,7 +1604,7 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
 
                 res.set_chunked_content_provider(
                     "text/event-stream",
-                    [this, request_body](size_t offset, httplib::DataSink& sink) {
+                    [this, request_body, tracker = std::move(tracker)](size_t offset, httplib::DataSink& sink) {
                         if (offset > 0) {
                             return false; // Already sent everything
                         }
@@ -1693,7 +1684,7 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
                     if (response.contains("usage") && response["usage"].contains("prompt_tokens")) {
                         prompt_tokens = response["usage"]["prompt_tokens"].get<int>();
                     }
-                    metrics_registry_->record_inference(input_tokens, output_tokens, prompt_tokens, ttft_seconds, tps);
+                    metrics_registry_->record_inference(requested_model, input_tokens, output_tokens, prompt_tokens, ttft_seconds, tps);
                 }
             } else if (response.contains("usage")) {
                 auto usage = response["usage"];
@@ -1732,7 +1723,7 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
                     if (response.contains("usage") && response["usage"].contains("prompt_tokens")) {
                         prompt_tokens = response["usage"]["prompt_tokens"].get<int>();
                     }
-                    metrics_registry_->record_inference(input_tokens, output_tokens, prompt_tokens, ttft_seconds, tps);
+                    metrics_registry_->record_inference(requested_model, input_tokens, output_tokens, prompt_tokens, ttft_seconds, tps);
                 }
             }
 
@@ -1755,9 +1746,11 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
 }
 
 void Server::handle_embeddings(const httplib::Request& req, httplib::Response& res) {
-    ActiveRequestTracker tracker(metrics_registry_.get());
     try {
         auto request_json = nlohmann::json::parse(req.body);
+        std::string requested_model = request_json.contains("model") ? request_json["model"].get<std::string>() : "";
+        ActiveRequestTracker tracker(metrics_registry_.get(), requested_model);
+
 
         // Handle model loading/switching using helper function
         if (request_json.contains("model")) {
@@ -1792,9 +1785,11 @@ void Server::handle_embeddings(const httplib::Request& req, httplib::Response& r
 }
 
 void Server::handle_reranking(const httplib::Request& req, httplib::Response& res) {
-    ActiveRequestTracker tracker(metrics_registry_.get());
     try {
         auto request_json = nlohmann::json::parse(req.body);
+        std::string requested_model = request_json.contains("model") ? request_json["model"].get<std::string>() : "";
+        ActiveRequestTracker tracker(metrics_registry_.get(), requested_model);
+
 
         // Handle model loading/switching using helper function
         if (request_json.contains("model")) {
@@ -1829,9 +1824,11 @@ void Server::handle_reranking(const httplib::Request& req, httplib::Response& re
 }
 
 void Server::handle_audio_transcriptions(const httplib::Request& req, httplib::Response& res) {
-    ActiveRequestTracker tracker(metrics_registry_.get());
     try {
         LOG(INFO, "Server") << "POST /api/v1/audio/transcriptions" << std::endl;
+        std::string requested_model = req.form.has_field("model") ? req.form.get_field("model") : "";
+        ActiveRequestTracker tracker(metrics_registry_.get(), requested_model);
+
 
         // OpenAI audio API uses multipart form data
         if (!req.is_multipart_form_data()) {
@@ -1851,6 +1848,7 @@ void Server::handle_audio_transcriptions(const httplib::Request& req, httplib::R
         if (req.form.has_field("model")) {
             request_json["model"] = req.form.get_field("model");
         }
+
         if (req.form.has_field("language")) {
             request_json["language"] = req.form.get_field("language");
         }
@@ -1934,9 +1932,11 @@ void Server::handle_audio_transcriptions(const httplib::Request& req, httplib::R
 }
 
 void Server::handle_audio_speech(const httplib::Request& req, httplib::Response& res) {
-    ActiveRequestTracker tracker(metrics_registry_.get());
     try {
         auto request_json = nlohmann::json::parse(req.body);
+        std::string requested_model = request_json.contains("model") ? request_json["model"].get<std::string>() : "";
+        ActiveRequestTracker tracker(metrics_registry_.get(), requested_model);
+
 
         // Handle model loading
         if (request_json.contains("model")) {
@@ -2009,7 +2009,7 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
 
         res.set_header("Content-Type", mime_type);
 
-        auto audio_source = [this, request_json](size_t offset, httplib::DataSink& sink) {
+        auto audio_source = [this, request_json, tracker = std::move(tracker)](size_t offset, httplib::DataSink& sink) {
             // For chunked responses, offset tracks bytes sent so far
             // We only want to stream once when offset is 0
             if (offset > 0) {
@@ -2046,11 +2046,12 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
 }
 
 void Server::handle_image_generations(const httplib::Request& req, httplib::Response& res) {
-    ActiveRequestTracker tracker(metrics_registry_.get());
     try {
         LOG(INFO, "Server") << "POST /api/v1/images/generations" << std::endl;
-
         auto request_json = nlohmann::json::parse(req.body);
+        std::string requested_model = request_json.contains("model") ? request_json["model"].get<std::string>() : "";
+        ActiveRequestTracker tracker(metrics_registry_.get(), requested_model);
+
 
         // Validate required fields
         if (!request_json.contains("prompt")) {
@@ -2191,9 +2192,11 @@ bool Server::load_image_model(const nlohmann::json& request_json, httplib::Respo
 }
 
 void Server::handle_image_edits(const httplib::Request& req, httplib::Response& res) {
-    ActiveRequestTracker tracker(metrics_registry_.get());
     try {
         LOG(INFO, "Server") << "POST /api/v1/images/edits" << std::endl;
+        std::string requested_model = req.form.has_field("model") ? req.form.get_field("model") : "";
+        ActiveRequestTracker tracker(metrics_registry_.get(), requested_model);
+
 
         if (!req.is_multipart_form_data()) {
             res.status = 400;
@@ -2334,9 +2337,11 @@ void Server::handle_image_edits(const httplib::Request& req, httplib::Response& 
 }
 
 void Server::handle_image_variations(const httplib::Request& req, httplib::Response& res) {
-    ActiveRequestTracker tracker(metrics_registry_.get());
     try {
         LOG(INFO, "Server") << "POST /api/v1/images/variations" << std::endl;
+        std::string requested_model = req.form.has_field("model") ? req.form.get_field("model") : "";
+        ActiveRequestTracker tracker(metrics_registry_.get(), requested_model);
+
 
         if (!req.is_multipart_form_data()) {
             res.status = 400;
@@ -2387,9 +2392,11 @@ void Server::handle_image_variations(const httplib::Request& req, httplib::Respo
 }
 
 void Server::handle_image_upscale(const httplib::Request& req, httplib::Response& res) {
-    ActiveRequestTracker tracker(metrics_registry_.get());
     try {
         LOG(INFO, "Server") << "POST /api/v1/images/upscale" << std::endl;
+        std::string requested_model = req.form.has_field("model") ? req.form.get_field("model") : "";
+        ActiveRequestTracker tracker(metrics_registry_.get(), requested_model);
+
 
         auto request_json = nlohmann::json::parse(req.body);
 
