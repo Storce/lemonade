@@ -1,8 +1,8 @@
 services:
-  # 1. AMD Lemonade SDK (Build from Source)
+  # 1. Lemonade SDK (Building for NVIDIA/Generic)
   lemonade:
-    build: 
-      context: ../
+    build:
+      context: ..
       dockerfile: Dockerfile
     container_name: lemonade
     ports:
@@ -11,13 +11,6 @@ services:
       - lemonade-cache:/root/.cache/huggingface
       - lemonade-llama:/opt/lemonade/llama
       - lemonade-recipe:/root/.cache/lemonade
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: non-glvnd
-              count: all
-              capabilities: [gpu]
     restart: unless-stopped
 
   # 2. Custom Lemonade Exporter
