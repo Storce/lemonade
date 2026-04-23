@@ -533,21 +533,9 @@
           "legendFormat": "Active Requests",
           "range": true,
           "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "editorMode": "code",
-          "expr": "lemonade_concurrent_users",
-          "instant": false,
-          "legendFormat": "Concurrent Users",
-          "range": true,
-          "refId": "B"
         }
       ],
-      "title": "Requests and Users",
+      "title": "Active Requests",
       "type": "timeseries"
     }
   ],
