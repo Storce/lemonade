@@ -11,7 +11,9 @@
 #include "lemon/logging_config.h"
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
+#include "lemon/system_info.h"
 #include "lemon/version.h"
+#include "lemon/metrics_registry.h"
 #include <iostream>
 #include <iomanip>
 #include <sstream>
@@ -143,6 +145,8 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
     router_ = std::make_unique<Router>(config_.get(),
                                        model_manager_.get(),
                                        backend_manager_.get());
+
+    metrics_registry_ = std::make_unique<MetricsRegistry>(router_.get());
 
     LOG(DEBUG, "Server") << "Debug logging enabled - subprocess output will be visible" << std::endl;
 
@@ -424,6 +428,14 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_log_level(req, res);
     });
 
+    // Native Prometheus metrics
+    register_get("metrics", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_metrics(req, res);
+    });
+    // Add bypass for the standard `/metrics` endpoint as well
+    web_server.Get("/metrics", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_metrics(req, res);
+    });
 
     // NOTE: /api/v1/halt endpoint removed - use SIGTERM signal instead (like Python server)
     // The stop command now sends termination signal directly to the process
@@ -904,6 +916,11 @@ void Server::run() {
         }
     }
 
+    if (metrics_registry_) {
+        LOG(INFO, "Server") << "Starting Metrics Registry backend poller..." << std::endl;
+        metrics_registry_->start();
+    }
+
     while (true) {
         std::atomic<bool> listener_started(false);
         std::atomic<bool> listener_start_failed(false);
@@ -1015,6 +1032,11 @@ void Server::stop() {
         if (websocket_server_) {
             LOG(INFO, "Server") << "Stopping WebSocket server..." << std::endl;
             websocket_server_->stop();
+        }
+
+        if (metrics_registry_) {
+            LOG(INFO, "Server") << "Stopping Metrics Registry..." << std::endl;
+            metrics_registry_->stop();
         }
 
         // Explicitly clean up router (unload models, stop backend servers)
@@ -1314,6 +1336,7 @@ void Server::handle_model_by_id(const httplib::Request& req, httplib::Response& 
 }
 
 void Server::handle_chat_completions(const httplib::Request& req, httplib::Response& res) {
+    ActiveRequestTracker tracker(metrics_registry_.get());
     try {
         auto request_json = nlohmann::json::parse(req.body);
 
@@ -1466,6 +1489,13 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
 
                 // Save telemetry to router
                 router_->update_telemetry(input_tokens, output_tokens, ttft_seconds, tps);
+                if (metrics_registry_) {
+                    int prompt_tokens = input_tokens;
+                    if (response.contains("usage") && response["usage"].contains("prompt_tokens")) {
+                        prompt_tokens = response["usage"]["prompt_tokens"].get<int>();
+                    }
+                    metrics_registry_->record_inference(input_tokens, output_tokens, prompt_tokens, ttft_seconds, tps);
+                }
             } else if (response.contains("usage")) {
                 // OpenAI format uses "usage" field
                 auto usage = response["usage"];
@@ -1499,6 +1529,13 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
 
                 // Save telemetry to router
                 router_->update_telemetry(input_tokens, output_tokens, ttft_seconds, tps);
+                if (metrics_registry_) {
+                    int prompt_tokens = input_tokens;
+                    if (response.contains("usage") && response["usage"].contains("prompt_tokens")) {
+                        prompt_tokens = response["usage"]["prompt_tokens"].get<int>();
+                    }
+                    metrics_registry_->record_inference(input_tokens, output_tokens, prompt_tokens, ttft_seconds, tps);
+                }
             }
 
             // Capture prompt_tokens from usage if available
@@ -1520,6 +1557,7 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
 }
 
 void Server::handle_completions(const httplib::Request& req, httplib::Response& res) {
+    ActiveRequestTracker tracker(metrics_registry_.get());
     try {
         auto request_json = nlohmann::json::parse(req.body);
 
@@ -1650,6 +1688,13 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
 
                 // Save telemetry to router
                 router_->update_telemetry(input_tokens, output_tokens, ttft_seconds, tps);
+                if (metrics_registry_) {
+                    int prompt_tokens = input_tokens;
+                    if (response.contains("usage") && response["usage"].contains("prompt_tokens")) {
+                        prompt_tokens = response["usage"]["prompt_tokens"].get<int>();
+                    }
+                    metrics_registry_->record_inference(input_tokens, output_tokens, prompt_tokens, ttft_seconds, tps);
+                }
             } else if (response.contains("usage")) {
                 auto usage = response["usage"];
                 int input_tokens = 0;
@@ -1682,6 +1727,13 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
 
                 // Save telemetry to router
                 router_->update_telemetry(input_tokens, output_tokens, ttft_seconds, tps);
+                if (metrics_registry_) {
+                    int prompt_tokens = input_tokens;
+                    if (response.contains("usage") && response["usage"].contains("prompt_tokens")) {
+                        prompt_tokens = response["usage"]["prompt_tokens"].get<int>();
+                    }
+                    metrics_registry_->record_inference(input_tokens, output_tokens, prompt_tokens, ttft_seconds, tps);
+                }
             }
 
             // Capture prompt_tokens from usage if available
@@ -1703,6 +1755,7 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
 }
 
 void Server::handle_embeddings(const httplib::Request& req, httplib::Response& res) {
+    ActiveRequestTracker tracker(metrics_registry_.get());
     try {
         auto request_json = nlohmann::json::parse(req.body);
 
@@ -1739,6 +1792,7 @@ void Server::handle_embeddings(const httplib::Request& req, httplib::Response& r
 }
 
 void Server::handle_reranking(const httplib::Request& req, httplib::Response& res) {
+    ActiveRequestTracker tracker(metrics_registry_.get());
     try {
         auto request_json = nlohmann::json::parse(req.body);
 
@@ -1775,6 +1829,7 @@ void Server::handle_reranking(const httplib::Request& req, httplib::Response& re
 }
 
 void Server::handle_audio_transcriptions(const httplib::Request& req, httplib::Response& res) {
+    ActiveRequestTracker tracker(metrics_registry_.get());
     try {
         LOG(INFO, "Server") << "POST /api/v1/audio/transcriptions" << std::endl;
 
@@ -1879,6 +1934,7 @@ void Server::handle_audio_transcriptions(const httplib::Request& req, httplib::R
 }
 
 void Server::handle_audio_speech(const httplib::Request& req, httplib::Response& res) {
+    ActiveRequestTracker tracker(metrics_registry_.get());
     try {
         auto request_json = nlohmann::json::parse(req.body);
 
@@ -1990,6 +2046,7 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
 }
 
 void Server::handle_image_generations(const httplib::Request& req, httplib::Response& res) {
+    ActiveRequestTracker tracker(metrics_registry_.get());
     try {
         LOG(INFO, "Server") << "POST /api/v1/images/generations" << std::endl;
 
@@ -2134,6 +2191,7 @@ bool Server::load_image_model(const nlohmann::json& request_json, httplib::Respo
 }
 
 void Server::handle_image_edits(const httplib::Request& req, httplib::Response& res) {
+    ActiveRequestTracker tracker(metrics_registry_.get());
     try {
         LOG(INFO, "Server") << "POST /api/v1/images/edits" << std::endl;
 
@@ -2276,6 +2334,7 @@ void Server::handle_image_edits(const httplib::Request& req, httplib::Response& 
 }
 
 void Server::handle_image_variations(const httplib::Request& req, httplib::Response& res) {
+    ActiveRequestTracker tracker(metrics_registry_.get());
     try {
         LOG(INFO, "Server") << "POST /api/v1/images/variations" << std::endl;
 
@@ -2328,6 +2387,7 @@ void Server::handle_image_variations(const httplib::Request& req, httplib::Respo
 }
 
 void Server::handle_image_upscale(const httplib::Request& req, httplib::Response& res) {
+    ActiveRequestTracker tracker(metrics_registry_.get());
     try {
         LOG(INFO, "Server") << "POST /api/v1/images/upscale" << std::endl;
 
@@ -3519,6 +3579,17 @@ void Server::handle_system_stats(const httplib::Request& req, httplib::Response&
     stats["npu_percent"] = (npu_percent >= 0) ? nlohmann::json(npu_percent) : nlohmann::json();
 
     res.set_content(stats.dump(), "application/json");
+}
+
+void Server::handle_metrics(const httplib::Request& req, httplib::Response& res) {
+    if (!metrics_registry_) {
+        res.status = 503;
+        res.set_content("Metrics registry not initialized", "text/plain");
+        return;
+    }
+    std::string prometheus_doc = metrics_registry_->format_prometheus();
+    res.set_header("Content-Type", "text/plain; version=0.0.4");
+    res.set_content(prometheus_doc, "text/plain; version=0.0.4");
 }
 
 void Server::handle_log_level(const httplib::Request& req, httplib::Response& res) {

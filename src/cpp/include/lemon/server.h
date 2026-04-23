@@ -16,6 +16,7 @@
 #include "model_manager.h"
 #include "backend_manager.h"
 #include "websocket_server.h"
+#include "metrics_registry.h"
 #include "lemon/utils/network_beacon.h"
 
 namespace lemon {
@@ -83,6 +84,7 @@ private:
     void handle_stats(const httplib::Request& req, httplib::Response& res);
     void handle_system_info(const httplib::Request& req, httplib::Response& res);
     void handle_system_stats(const httplib::Request& req, httplib::Response& res);
+    void handle_metrics(const httplib::Request& req, httplib::Response& res);
     void handle_log_level(const httplib::Request& req, httplib::Response& res);
     void handle_shutdown(const httplib::Request& req, httplib::Response& res);
 
@@ -150,6 +152,7 @@ private:
     std::unique_ptr<ModelManager> model_manager_;
     std::unique_ptr<BackendManager> backend_manager_;
     std::unique_ptr<WebSocketServer> websocket_server_;
+    std::unique_ptr<MetricsRegistry> metrics_registry_;
 
     bool running_;
     std::atomic<bool> rebind_requested_{false};

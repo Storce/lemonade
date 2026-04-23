@@ -557,6 +557,7 @@ include_directories(
 # ============================================================
 set(SOURCES_CORE
     src/cpp/server/server.cpp
+    src/cpp/server/metrics_registry.cpp
     src/cpp/server/router.cpp
     src/cpp/server/cli_parser.cpp
     src/cpp/server/config_file.cpp

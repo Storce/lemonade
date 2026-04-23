@@ -4,4 +4,5 @@ global:
 scrape_configs:
   - job_name: 'lemonade'
     static_configs:
-      - targets: ['lemonade-exporter:9091']
+      # - targets: ['lemonade-exporter:9091']
+      - targets: ['lemonade:13305']
