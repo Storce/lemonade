@@ -128,11 +128,14 @@ public:
 
     // Forward streaming requests to the wrapped server (public for Router access)
     // Virtual so backends can transform request (e.g., FLM needs checkpoint in model field)
+    // post_telemetry_cb is called once streaming finishes with the final parsed telemetry
+    // so the Router can relay it back to MetricsRegistry without a direct dependency here.
     virtual void forward_streaming_request(const std::string& endpoint,
                                            const std::string& request_body,
                                            httplib::DataSink& sink,
                                            bool sse = true,
-                                           long timeout_seconds = 0);
+                                           long timeout_seconds = 0,
+                                           std::function<void(const StreamingProxy::TelemetryData&)> post_telemetry_cb = nullptr);
 
     // Get the server address
     std::string get_address() const {

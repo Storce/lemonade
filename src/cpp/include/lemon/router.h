@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <string>
 #include <memory>
 #include <mutex>
@@ -7,6 +8,7 @@
 #include <vector>
 #include <nlohmann/json.hpp>
 #include <httplib.h>
+#include "streaming_proxy.h"
 #include "wrapped_server.h"
 #include "model_manager.h"
 #include "backend_manager.h"
@@ -79,10 +81,17 @@ public:
     json image_edits(const json& request);
     json image_variations(const json& request);
 
-    // Forward streaming requests to the appropriate wrapped server
-    void chat_completion_stream(const std::string& request_body, httplib::DataSink& sink);
-    void completion_stream(const std::string& request_body, httplib::DataSink& sink);
-    void responses_stream(const std::string& request_body, httplib::DataSink& sink);
+    // Forward streaming requests to the appropriate wrapped server.
+    // metrics_cb is called once the stream finishes with the parsed telemetry so
+    // the caller (Server) can update MetricsRegistry without introducing a
+    // circular dependency between Router and MetricsRegistry.
+    using StreamMetricsCb = std::function<void(const StreamingProxy::TelemetryData&)>;
+    void chat_completion_stream(const std::string& request_body, httplib::DataSink& sink,
+                                StreamMetricsCb metrics_cb = nullptr);
+    void completion_stream(const std::string& request_body, httplib::DataSink& sink,
+                           StreamMetricsCb metrics_cb = nullptr);
+    void responses_stream(const std::string& request_body, httplib::DataSink& sink,
+                          StreamMetricsCb metrics_cb = nullptr);
 
     // Get telemetry data
     json get_stats() const;
