@@ -1,0 +1,58 @@
+services:
+  # 1. AMD Lemonade SDK (Build from Source)
+  lemonade:
+    build: 
+      context: ../
+      dockerfile: Dockerfile
+    container_name: lemonade
+    ports:
+      - "13305:13305"
+    volumes:
+      - lemonade-cache:/root/.cache/huggingface
+      - lemonade-llama:/opt/lemonade/llama
+      - lemonade-recipe:/root/.cache/lemonade
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: non-glvnd
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+
+  # 2. Custom Lemonade Exporter
+  lemonade-exporter:
+    build: ./exporter
+    container_name: lemonade-exporter
+    environment:
+      - LEMONADE_URL=http://lemonade:13305
+    ports:
+      - "9091:9091"
+    depends_on:
+      - lemonade
+
+  # 3. Prometheus
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+
+  # 4. Grafana
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+
+volumes:
+  lemonade-cache:
+  lemonade-llama:
+  lemonade-recipe:
+  prometheus_data:
+  grafana_data:
