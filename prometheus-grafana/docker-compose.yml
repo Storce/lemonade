@@ -14,15 +14,15 @@ services:
     restart: unless-stopped
 
   # 2. Custom Lemonade Exporter
-  lemonade-exporter:
-    build: ./exporter
-    container_name: lemonade-exporter
-    environment:
-      - LEMONADE_URL=http://lemonade:13305
-    ports:
-      - "9091:9091"
-    depends_on:
-      - lemonade
+  # lemonade-exporter:
+  #   build: ./exporter
+  #   container_name: lemonade-exporter
+  #   environment:
+  #     - LEMONADE_URL=http://lemonade:13305
+  #   ports:
+  #     - "9091:9091"
+  #   depends_on:
+  #     - lemonade
 
   # 3. Prometheus
   prometheus:
